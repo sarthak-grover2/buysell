@@ -56,7 +56,7 @@ def get_data(url):
 set_cookie()
 
 data = ['RELIANCE']
-inputStocksDataFrame = pd.read_csv('C:\\Users\\sarth\\Documents\\StockLotSize.csv')
+inputStocksDataFrame = pd.read_csv('/home/runner/work/buysell/buysell/.github/workflows/StockLotSize.csv')
 #pd.DataFrame(data , columns=['StockSymbol'])
 
 inputStockList = inputStocksDataFrame['StockSymbol'].tolist()
