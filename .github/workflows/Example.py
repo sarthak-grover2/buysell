@@ -433,7 +433,7 @@ send_to_email = ['callput.automate@gmail.com','sarthakgr@infinite.com' , 'gaurav
 
 
 msg = MIMEMultipart()
-msg['Subject'] = "Call data  current month"
+msg['Subject'] = "BUY SELL current month"
 
 
 
