@@ -19,7 +19,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fake_useragent import UserAgent
 from concurrent.futures import ThreadPoolExecutor
-
+from requests import Session
 
 
 url_oc      = "https://www.nseindia.com/option-chain"
@@ -57,6 +57,7 @@ set_cookie()
 
 data = ['RELIANCE']
 inputStocksDataFrame = pd.read_csv('/home/runner/work/buysell/buysell/.github/workflows/StockLotSize.csv')
+#inputStocksDataFrame = pd.read_csv('C:\\Users\\sarth\\Documents\\StockLotSize-1.csv')
 #pd.DataFrame(data , columns=['StockSymbol'])
 
 inputStockList = inputStocksDataFrame['StockSymbol'].tolist()
@@ -67,55 +68,47 @@ df_error_list = []
 
 for stockSymbol  in inputStocksDataFrame['StockSymbol']:
     print(stockSymbol)
-    
-    stockjsondata = get_data('https://www.nseindia.com/api/option-chain-equities?symbol='+stockSymbol)
-    
-    if(stockjsondata=='' or stockjsondata=={}):
-        print('hi')
-        df_error_list.append(stockSymbol)
-    else:
-        developerStock = json.loads(stockjsondata);
-        #print(developerStock)
-        recordsStock = developerStock['records']
-        dataStock = recordsStock['data']
-        df_read_stock = pd.json_normalize(dataStock)
-        df_combined_stock = pd.concat([df_read_stock ,  df_combined_stock], ignore_index=True)
-
-df_combined_stock = pd.DataFrame()
-df_error_list = []
-
-
-for stockSymbol  in inputStocksDataFrame['StockSymbol']:
-    print(stockSymbol)
-    
-    stockjsondata = get_data('https://www.nseindia.com/api/option-chain-equities?symbol='+stockSymbol)
-    
-    if(stockjsondata=='' or stockjsondata=={}):
+    try:
+        stockjsondata = get_data('https://www.nseindia.com/api/option-chain-equities?symbol='+stockSymbol)
         
+        if(stockjsondata=='' or stockjsondata=={}):
+            
+            df_error_list.append(stockSymbol)
+        else:
+            
+            developerStock = json.loads(stockjsondata);
+            #print(developerStock)
+            recordsStock = developerStock['records']
+            dataStock = recordsStock['data']
+            df_read_stock = pd.json_normalize(dataStock)
+            df_combined_stock = pd.concat([df_read_stock, df_combined_stock ], ignore_index=True)
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data for {stockSymbol}: {e}")
         df_error_list.append(stockSymbol)
-    else:
-        developerStock = json.loads(stockjsondata);
-        #print(developerStock)
-        recordsStock = developerStock['records']
-        dataStock = recordsStock['data']
-        df_read_stock = pd.json_normalize(dataStock)
-        df_combined_stock = pd.concat([df_read_stock, df_combined_stock ], ignore_index=True)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON for {stockSymbol}: {e}")
+        df_error_list.append(stockSymbol)
 
+print('erorr frame processing start')
+print(df_error)
+print('erorr frame processing end')
+for stockSymbol  in df_error['StockSymbol']: 
+    try:
+        stockjsondata = get_data('https://www.nseindia.com/api/option-chain-equities?symbol='+stockSymbol)
+        #print(stockjsondata )
+        if(stockjsondata=='' or stockjsondata=={}):
+            print('hi')
+        else:
+            developerStock = json.loads(stockjsondata);
+            recordsStock = developerStock['records']
+            dataStock = recordsStock['data']
+            df_read_stock = pd.json_normalize(dataStock)
+            df_combined_stock = pd.concat([df_read_stock , df_combined_stock] , ignore_index=True)
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data for {stockSymbol}: {e}")
 
-
-for stockSymbol  in df_error['StockSymbol']:
-    print(stockSymbol)
-
-    stockjsondata = get_data('https://www.nseindia.com/api/option-chain-equities?symbol='+stockSymbol)
-    #print(stockjsondata )
-    if(stockjsondata=='' or stockjsondata=={}):
-        print('hi')
-    else:
-        developerStock = json.loads(stockjsondata);
-        recordsStock = developerStock['records']
-        dataStock = recordsStock['data']
-        df_read_stock = pd.json_normalize(dataStock)
-        df_combined_stock = pd.concat([df_read_stock , df_combined_stock] , ignore_index=True)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON for {stockSymbol}: {e}")
 
 
 
@@ -163,12 +156,20 @@ current_date = datetime.today()
 merged_df['Date_Difference'] = (merged_df['expiryDate'] - current_date).dt.days
 merged_df['GAP'] = ((merged_df['strikePrice'] - merged_df['lastPrice']) / merged_df['lastPrice']) * 100
 
-merged_df = merged_df[merged_df['strikePrice'] >= merged_df['lastPrice']* 1.15]
-merged_df = merged_df[merged_df['expiryDate'].dt.month == current_date.month]
+merged_df = merged_df[merged_df['strikePrice'] >= merged_df['lastPrice']* 1.10]
+
 merged_df['strikePrice'] = merged_df['strikePrice'].apply(lambda x: f'{x:.1f}' if x != int(x) else str(int(x)))
 
 
+next_month = current_date.replace(day=1) + timedelta(days=32)
+next_month = next_month.replace(day=1)
 
+current_date = datetime.today()
+merged_df['Days_Till_Expiry'] = (merged_df['expiryDate'] - current_date).dt.days
+
+merged_df = merged_df[
+    (merged_df['expiryDate'].dt.month == current_date.month) | ((merged_df['Date_Difference'] >= 8) & (merged_df['expiryDate'].dt.month == next_month.month))
+]
 
 
 # Perform a self-join on the 'symbol' column
@@ -178,7 +179,7 @@ self_joined_df = pd.merge(merged_df, merged_df, on='symbol', how='inner', suffix
 filtered_self_joined_df = self_joined_df[self_joined_df.strikePrice_left < self_joined_df.strikePrice_right]
 filtered_self_joined_df['Price_Difference'] = filtered_self_joined_df['CEbidprice_left'] - filtered_self_joined_df['CEaskPrice_right']
 filtered_self_joined_df['Profit'] = (filtered_self_joined_df['LotSize_left'] * filtered_self_joined_df['Price_Difference'])-100
-filtered_self_joined_df = filtered_self_joined_df[filtered_self_joined_df['Profit'] >= 260]
+filtered_self_joined_df = filtered_self_joined_df[filtered_self_joined_df['Profit'] >= 100]
 
 columns_to_drop = ['expiryDate_right', 'open_right', 'dayHigh_right', 'dayLow_right', 'lastPrice_right', 
                    'yearHigh_right', 'yearLow_right', 'perChange30d_right', 'LotSize_right', 
@@ -205,10 +206,14 @@ filtered_self_joined_df.columns = [col.replace('_left', '') for col in filtered_
 
 filtered_self_joined_df['expiryDate'] = pd.to_datetime(filtered_self_joined_df['expiryDate']).dt.strftime('%d-%b-%y')
 
-print(filtered_self_joined_df.to_string())
+filtered_self_joined_df['expiryDate'] = pd.to_datetime(filtered_self_joined_df['expiryDate'])
+filtered_self_joined_df['scripDate'] = filtered_self_joined_df['symbol'] + filtered_self_joined_df['expiryDate'].dt.strftime('%y') + filtered_self_joined_df['expiryDate'].dt.strftime('%b') 
+#print(filtered_self_joined_df.to_string())
 # Display the filtered self-joined DataFrame
-print(filtered_self_joined_df)
+#print(filtered_self_joined_df)
 
+
+filtered_self_joined_df.to_csv('C:\\Users\\sarth\\file1.csv')
 
 def drop_rows_by_count(group):
     count = len(group)
@@ -246,196 +251,133 @@ filtered_self_joined_df = (
 )
 
 
+print(filtered_self_joined_df.to_string())
+
+json_template = {
+    'action': 'calculate',
+    'exchange[]': ['NFO' , 'NFO'],
+    'product[]': ['OPT' , 'OPT'],
+    'scrip[]': '',
+    'option_type[]': ['CE' , 'CE'],
+    'trade[]': ['sell' , 'buy']
+}
+
+# Create an empty list to store individual JSON records
+json_records = []
 
 
-options = Options()
-ua = UserAgent()
-userAgent = ua.random
+payload = {
+  "action": "calculate",
+  "exchange[]": [
+    "NFO",
+    "NFO"
+  ],
+  "option_type[]": [
+    "CE",
+    "CE"
+  ],
+  "product[]": [
+    "OPT",
+    "OPT"
+  ],
+  "qty[]": [
+    "1500",
+    "1500"
+  ],
+  "scrip[]": [
+    "SBIN23AUG",
+    "SBIN23AUG"
+  ],
+  "strike_price[]": [
+    "650",
+    "660"
+  ],
+  "trade[]": [
+    "sell",
+    "buy"
+  ]
+}
 
-ua = UserAgent()
-userAgent = ua.random
+
+
+BASE_URL = 'https://zerodha.com/margin-calculator/SPAN'
+
+# Iterate over each row in the merged_df DataFrame
+for index, row in filtered_self_joined_df.iterrows():
+    json_record = json_template.copy()  # Create a copy of the template
+    json_record['scrip[]'] = [row['scripDate'].upper(), row['scripDate'].upper()]  # Populate the 'scrip[]' field
+    json_record['qty[]'] = [row['LotSize'], row['LotSize']]  # Populate the 'scrip[]' field
+    json_record['strike_price[]'] = [row['Strike_Price_Sell'], row['Strike_Price_Buy']] 
+    print(json_record)
+    #json_records.append(json_record)
+    
+    print('hi')
+    #print(json.dumps(json_record, indent=4))
+    #execute = json.dumps(json_record, indent=4)
+    #print(json_record)
+    session = Session()
+    try:
+        res = session.post(BASE_URL, data=json_record)
+        response_data = res.json()
+        
+        # Extract values under "total" key
+        total_values = response_data.get('total', {})
+        
+        # Handle cases where the values are null, not available, or zero
+
+
+        overall_total = total_values.get('total', 0)
+        filtered_self_joined_df.loc[index, 'Margin'] = overall_total
+        
+        if overall_total is None:
+            print("Some total values are missing or null")
+        
+        # Update the DataFrame or perform any other necessary actions with the extracted values
+        
+    except json.JSONDecodeError:
+        print("Response content is not valid JSON")
 
 
 
-# Set up Chrome options
-chrome_options = Options()
-chrome_options.add_argument("--headless")  # Run Chrome in headless mode (without GUI)
-chrome_options.add_argument("--window-size=1920x1080")
-
-chrome_options.add_argument(f'user-agent={userAgent}')
-chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-chrome_options.add_experimental_option('useAutomationExtension', False)
-chrome_options.add_argument("--disable-blink-features")
-chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-chrome_options.add_experimental_option('useAutomationExtension', False)
-
-combinedCallMarginList = []
-
-
-
-
+        
+#print(merged_df.to_string())
+# Convert the list of JSON records to a JSON string
 filtered_self_joined_df.to_csv('C:\\Users\\sarth\\file1.csv')
-def get_margin_values_call(params ):
-        Strike  , StockName, BuyerPrice , GAP , LTP , Open , DayHigh , DayLow , FiftyWeekHigh , FiftyWeekLow , Expiry , ThirtyDay ,Days_Till_Expiry , Total_Profit , Buy_Price , Strike_Price_Buy = params
-        driver = webdriver.Chrome(options=chrome_options)
-        print(Strike)
-        driver.get("https://zerodha.com/margin-calculator/SPAN/")   
-        time.sleep(1)   
-        driver.find_element(By.XPATH, '//*[@id="form-span"]/div/p[6]/label[3]/input').click()
-        driver.find_element(By.XPATH, '//*[@id="product"]/option[2]').click()
-        driver.find_element(By.XPATH, '//*[@id="strike_price"]').send_keys(Strike)
-        driver.find_element(By.XPATH, '//*[@id="select2-scrip-container"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.XPATH, '/html/body/span/span/span[1]/input').send_keys(StockName + ' ' + Expiry)
-        time.sleep(0.5)
-        driver.find_element(By.XPATH, '/html/body/span/span/span[2]/ul/li[1]').click()
-        time.sleep(0.5)
-        driver.find_element(By.XPATH, '//*[@id="form-span"]/div/p[7]/input[1]').click() 
-        time.sleep(1.2)
-        driver.find_element(By.XPATH, '//*[@id="strike_price"]').clear()
-        driver.find_element(By.XPATH, '//*[@id="strike_price"]').send_keys(Strike_Price_Buy)####Change here
-        driver.find_element(By.XPATH, '//*[@id="form-span"]/div/p[6]/label[2]/input').click()
-        time.sleep(1)
-        driver.find_element(By.XPATH, '//*[@id="form-span"]/div/p[7]/input[1]').click()
-        time.sleep(1)
-            
-        margin = driver.find_element(By.XPATH, '//*[@id="tally"]/p[5]/span').text
-        margin = margin.replace('Rs. ', '')
-        margin = margin.replace(',', '')
-        
+# Convert the date column to datetime format
+filtered_self_joined_df['expiryDate'] = pd.to_datetime(merged_df['expiryDate'])
 
-        print(margin)
-        print(Strike)
-        print(StockName)
-        if(margin==0 or Total_Profit==0 or Days_Till_Expiry==0 ):
-            ProfitPer = 0
-        else:
-            
-            ProfitPer = (float(Total_Profit)/float(margin)) * 100 * (365/float(Days_Till_Expiry)) 
-        
+# Format the date column as "11 Aug 23"
+filtered_self_joined_df['expiryDate'] = filtered_self_joined_df['expiryDate'].dt.strftime('%d %b %y')
 
-        #print('i am here 3')  
-        combinedCallMarginList.append([Strike  , StockName, BuyerPrice, GAP  , LTP , Open , DayHigh , DayLow , FiftyWeekHigh , FiftyWeekLow , Expiry , ThirtyDay ,Days_Till_Expiry , float(margin) , Total_Profit , ProfitPer, Buy_Price , Strike_Price_Buy]) 
-  
-        
+filtered_self_joined_df['Profit%'] = (filtered_self_joined_df['Profit'] / filtered_self_joined_df['Margin']) * 100 * (365 / filtered_self_joined_df['Days_Till_Expiry'])
 
-scrape_params = [
-    (
-        row['Strike_Price_Sell'],
-        row['symbol'],
-        row['Sell_Price'],
-        row['GAP'],
-        row['lastPrice'],
-        row['open'],
-        row['dayHigh'],
-        row['dayLow'],
-        row['yearHigh'],
-        row['yearLow'],
-		row['expiryDate'],
-        row['perChange30d'],
-        row['Date_Difference'],
-        row['Profit'],
-        row['Buy_Price'],
-		row['Strike_Price_Buy']
-    )
-    for _, row in filtered_self_joined_df.iterrows()
+#merged_df['Profit%'] = (float(merged_df['Profit'])/float(merged_df['Margin'])) * 100 * (365/float(merged_df['Days_Till_Expiry'])) 
+
+filtered_self_joined_df = filtered_self_joined_df.sort_values('Profit%', ascending=[False])
+
+filtered_self_joined_df = filtered_self_joined_df.drop(columns=['scripDate' , 'Date_Difference'])
+filtered_self_joined_df = filtered_self_joined_df[filtered_self_joined_df['Profit%'] >= 10]
+
+
+
+
+new_column_order = [
+    'symbol', 'Profit%', 'GAP', 'lastPrice', 'Strike_Price_Sell',
+    'Strike_Price_Buy', 'Price_Difference', 'Sell_Price', 'Buy_Price',
+    'expiryDate', 'open', 'dayHigh', 'dayLow', 'yearHigh', 'yearLow',
+    'perChange30d', 'LotSize', 'Days_Till_Expiry', 'Profit', 'Margin'
 ]
 
-
-
-num_threads = 6  # You can adjust this based on your needs
-with ThreadPoolExecutor(max_workers=num_threads) as executor:
-    executor.map(get_margin_values_call, scrape_params)
-print('hi')
-
-print(combinedCallMarginList)
-combinedCallMarginFrame = pd.DataFrame(combinedCallMarginList,  columns =['Strike' 
-                                ,'StockName'
-                                ,'BuyerPrice' 
-                                ,'GAP' 
-                                ,'LTP' 
-                                ,'Open'
-                                ,'DayHigh'
-                                ,'DayLow'
-                                ,'50 Week High'
-                                ,'50 Week Low'
-                                ,'Expiry'
-                                ,'30Day%'
-                                ,'Days_Till_Expiry'
-                                ,'margin'
-                                ,'Total_Profit'
-                                ,'Profit%'
-								,'Buy_Price'
-								,'Strike_Price_Buy'
-                                ])
-
-
-
-# for outer in range(0, len(filtered_self_joined_df)):    
-#     try:
-#         get_margin_values_call(filtered_self_joined_df.iloc[outer]['Strike_Price_Sell']  
-#                           ,filtered_self_joined_df.iloc[outer]['symbol'] 
-#                           ,filtered_self_joined_df.iloc[outer]['Sell_Price'] 
-#                           ,filtered_self_joined_df.iloc[outer]['GAP'] 
-#                           ,filtered_self_joined_df.iloc[outer]['lastPrice'] 
-#                           ,filtered_self_joined_df.iloc[outer]['open'] 
-#                           ,filtered_self_joined_df.iloc[outer]['dayHigh'] 
-#                           ,filtered_self_joined_df.iloc[outer]['dayLow'] 
-#                           ,filtered_self_joined_df.iloc[outer]['yearHigh'] 
-#                           ,filtered_self_joined_df.iloc[outer]['yearLow'] 
-#                           ,filtered_self_joined_df.iloc[outer]['expiryDate'] 
-#                           ,filtered_self_joined_df.iloc[outer]['perChange30d'] 
-#                           ,filtered_self_joined_df.iloc[outer]['Date_Difference'] 
-#                           ,filtered_self_joined_df.iloc[outer]['Profit'] 
-#                           ,filtered_self_joined_df.iloc[outer]['Buy_Price'] 
-#                           ,filtered_self_joined_df.iloc[outer]['Strike_Price_Buy'] 
-#                           );   
-#     except ValueError as e:
-#             print('divided by zero')  
-#             print(e)
-        
-
-
-
-combinedCallMarginFrame = pd.DataFrame(combinedCallMarginList,  columns =['Strike' 
-                                ,'StockName'
-                                , 'BuyerPrice' 
-                                , 'GAP' 
-                                , 'LTP' 
-                                , 'Open'
-                                ,'DayHigh'
-                                ,'DayLow'
-                                ,'50 Week High'
-                                ,'50 Week Low'
-                                ,'Expiry'
-                                ,'30Day%'
-                                ,'Days_Till_Expiry'
-                                ,'margin'
-                                ,'Total_Profit'
-                                ,'Profit%'
-                                ,'Buy_Price'
-                                ,'Strike_Price_Buy'
-                                ])
-
-
-
-print(combinedCallMarginFrame)
-
-
-
-
-combinedCallMarginFrame = combinedCallMarginFrame.sort_values('Profit%', ascending=[False])
+filtered_self_joined_df = filtered_self_joined_df[new_column_order]
 
 email = "callput.automate@gmail.com" # the email where you sent the email
 password = 'pgcirdkstamiueeg'
-send_to_email = ['callput.automate@gmail.com','sarthakgr@infinite.com' , 'gaurav.grover@jindalpower.com']  # for whom
+send_to_email = ['callput.automate@gmail.com','sarthakgr@infinite.com','gaurav.grover@jindalpower.com'
+                 ] # for whom
 
 
 msg = MIMEMultipart()
-msg['Subject'] = "BUY SELL current month"
-
-
+msg['Subject'] = "BUY SELL CALL Data Current Month"
 
 html = """\
 <html>
@@ -445,17 +387,15 @@ html = """\
             Option Chain <br>
             {0}
 
-
         </p>
   </body>
 </html>
-""".format(combinedCallMarginFrame.to_html(index=False) )
+""".format(filtered_self_joined_df.to_html(index=False) )
 
 part1 = MIMEText(html, 'html')
 msg.attach(part1)
 
 #.format(cdf.to_html(), df.to_html())
-
 
 server = smtplib.SMTP("smtp.gmail.com", 587)
 server.starttls()
@@ -463,4 +403,11 @@ server.login(email, password)
 text = msg.as_string()
 server.sendmail(email, send_to_email, text)
 server.quit()
+
+    
+
+
+
+
+
 
