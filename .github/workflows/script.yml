@@ -35,7 +35,6 @@ jobs:
           pip install pandas
           pip install webdrivermanager
           webdrivermanager chrome --linkpath /usr/local/bin
-          pip install selenium
           pip install fake_useragent 
           
       # Print the contents of the current working directory
