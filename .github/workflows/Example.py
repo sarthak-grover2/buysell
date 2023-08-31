@@ -15,10 +15,6 @@ Created on Mon Aug 14 23:05:36 2023
 import requests
 import json
 import pandas as pd
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 import time
 from datetime import datetime , timedelta
 import smtplib
@@ -63,8 +59,8 @@ def get_data(url):
 set_cookie()
 
 data = ['RELIANCE']
-#inputStocksDataFrame = pd.read_csv('/home/runner/work/buysell/buysell/.github/workflows/StockLotSize.csv')
-inputStocksDataFrame = pd.read_csv('C:\\Users\\sarth\\Documents\\StockLotSize.csv')
+inputStocksDataFrame = pd.read_csv('/home/runner/work/buysell/buysell/.github/workflows/StockLotSize.csv')
+#inputStocksDataFrame = pd.read_csv('C:\\Users\\sarth\\Documents\\StockLotSize.csv')
 #pd.DataFrame(data , columns=['StockSymbol'])
 
 inputStockList = inputStocksDataFrame['StockSymbol'].tolist()
