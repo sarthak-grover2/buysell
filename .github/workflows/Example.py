@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Tue Aug 29 10:12:50 2023
+
+@author: sarth
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Mon Aug 14 23:05:36 2023
 
 @author: sarth
@@ -56,8 +63,8 @@ def get_data(url):
 set_cookie()
 
 data = ['RELIANCE']
-inputStocksDataFrame = pd.read_csv('/home/runner/work/buysell/buysell/.github/workflows/StockLotSize.csv')
-#inputStocksDataFrame = pd.read_csv('C:\\Users\\sarth\\Documents\\StockLotSize-1.csv')
+#inputStocksDataFrame = pd.read_csv('/home/runner/work/buysell/buysell/.github/workflows/StockLotSize.csv')
+inputStocksDataFrame = pd.read_csv('C:\\Users\\sarth\\Documents\\StockLotSize.csv')
 #pd.DataFrame(data , columns=['StockSymbol'])
 
 inputStockList = inputStocksDataFrame['StockSymbol'].tolist()
@@ -140,6 +147,13 @@ df_combined_stock_extracted = df_combined_stock[columns_to_extract_combined]
 df_combined_stock_extracted = df_combined_stock_extracted.dropna(subset=['CEunderlying'])
 
 filtered_df = df_combined_stock_extracted[~df_combined_stock_extracted['CEbidprice'].isin([0, 0.05])]
+filtered_df = df_combined_stock_extracted[~df_combined_stock_extracted['CEaskPrice'].isin([0, 0.05])]
+
+current_month = datetime.today().month
+filtered_df['expiryDate'] = pd.to_datetime(filtered_df['expiryDate'])
+
+#filtered_df = filtered_df[filtered_df['expiryDate'].dt.month == current_month]
+
 filtered_df.rename(columns={'CEunderlying': 'symbol'}, inplace=True)
 inputStocksDataFrame.rename(columns={'StockSymbol': 'symbol'}, inplace=True)
 # Reset the index after filtering rows
@@ -153,7 +167,7 @@ merged_df = pd.merge(pre_merged_call_df, inputStocksDataFrame, on='symbol', how=
 merged_df = merged_df.reset_index(drop=True)
 merged_df['expiryDate'] = pd.to_datetime(merged_df['expiryDate'], format='%d-%b-%Y')
 current_date = datetime.today()
-merged_df['Date_Difference'] = (merged_df['expiryDate'] - current_date).dt.days
+merged_df['Date_Difference'] = (merged_df['expiryDate'] - current_date).dt.days + 1
 merged_df['GAP'] = ((merged_df['strikePrice'] - merged_df['lastPrice']) / merged_df['lastPrice']) * 100
 
 merged_df = merged_df[merged_df['strikePrice'] >= merged_df['lastPrice']* 1.10]
@@ -161,11 +175,12 @@ merged_df = merged_df[merged_df['strikePrice'] >= merged_df['lastPrice']* 1.10]
 merged_df['strikePrice'] = merged_df['strikePrice'].apply(lambda x: f'{x:.1f}' if x != int(x) else str(int(x)))
 
 
-next_month = current_date.replace(day=1) + timedelta(days=32)
+next_month = current_date.replace(day=1) + timedelta(days=32
+                                                     )
 next_month = next_month.replace(day=1)
 
 current_date = datetime.today()
-merged_df['Days_Till_Expiry'] = (merged_df['expiryDate'] - current_date).dt.days
+merged_df['Days_Till_Expiry'] = (merged_df['expiryDate'] - current_date).dt.days + 1
 
 merged_df = merged_df[
     (merged_df['expiryDate'].dt.month == current_date.month) | ((merged_df['Date_Difference'] >= 8) & (merged_df['expiryDate'].dt.month == next_month.month))
@@ -173,17 +188,42 @@ merged_df = merged_df[
 
 
 # Perform a self-join on the 'symbol' column
-self_joined_df = pd.merge(merged_df, merged_df, on='symbol', how='inner', suffixes=('_left', '_right'))
+self_joined_df = pd.merge(merged_df, merged_df, on=['symbol' , 'expiryDate' ], how='inner', suffixes=('_left', '_right'))
 
 # Filter rows where strikePrice_left is greater than strikePrice_right
 filtered_self_joined_df = self_joined_df[self_joined_df.strikePrice_left < self_joined_df.strikePrice_right]
 filtered_self_joined_df['Price_Difference'] = filtered_self_joined_df['CEbidprice_left'] - filtered_self_joined_df['CEaskPrice_right']
 filtered_self_joined_df['Profit'] = (filtered_self_joined_df['LotSize_left'] * filtered_self_joined_df['Price_Difference'])-100
-filtered_self_joined_df = filtered_self_joined_df[filtered_self_joined_df['Profit'] >= 100]
+filtered_self_joined_df = filtered_self_joined_df[filtered_self_joined_df['Profit'] >= 200]
 
-columns_to_drop = ['expiryDate_right', 'open_right', 'dayHigh_right', 'dayLow_right', 'lastPrice_right', 
+
+
+
+
+filtered_self_joined_df.to_csv('C:\\Users\\sarth\\file1.csv')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+columns_to_drop = [ 'open_right', 'dayHigh_right', 'dayLow_right', 'lastPrice_right', 
                    'yearHigh_right', 'yearLow_right', 'perChange30d_right', 'LotSize_right', 
-                   'Date_Difference_right', 'GAP_right' , 'CEaskPrice_left' , 'CEaskPrice_right']
+                   'Date_Difference_right', 'GAP_right' , 'CEaskPrice_left' ]
 
 
 
@@ -192,7 +232,7 @@ filtered_self_joined_df = filtered_self_joined_df.drop(columns=columns_to_drop)
 column_rename_dict = {
     'CEbidprice_left': 'Sell_Price',
     'strikePrice_left': 'Strike_Price_Sell',
-    'CEbidprice_right': 'Buy_Price',
+    'CEaskPrice_right': 'Buy_Price',
     'strikePrice_right': 'Strike_Price_Buy'
 }
 
@@ -212,8 +252,6 @@ filtered_self_joined_df['scripDate'] = filtered_self_joined_df['symbol'] + filte
 # Display the filtered self-joined DataFrame
 #print(filtered_self_joined_df)
 
-
-filtered_self_joined_df.to_csv('C:\\Users\\sarth\\file1.csv')
 
 def drop_rows_by_count(group):
     count = len(group)
@@ -252,6 +290,9 @@ filtered_self_joined_df = (
 
 
 print(filtered_self_joined_df.to_string())
+
+
+filtered_self_joined_df.to_csv('C:\\Users\\sarth\\file1.csv')
 
 json_template = {
     'action': 'calculate',
@@ -324,14 +365,21 @@ for index, row in filtered_self_joined_df.iterrows():
         total_values = response_data.get('total', {})
         
         # Handle cases where the values are null, not available, or zero
-
-
-        overall_total = total_values.get('total', 0)
-        filtered_self_joined_df.loc[index, 'Margin'] = overall_total
+        if total_values is None or len(response_data['last']) == 0 or len(response_data['total']) == 0:
+            print('hello')
+        else:
+            
         
-        if overall_total is None:
-            print("Some total values are missing or null")
+
+            overall_total = total_values.get('total', 0)
+            
+            if overall_total is None:
+                print('hello')
+            else:
+                
+                filtered_self_joined_df.loc[index, 'Margin'] = overall_total
         
+
         # Update the DataFrame or perform any other necessary actions with the extracted values
         
     except json.JSONDecodeError:
@@ -342,19 +390,16 @@ for index, row in filtered_self_joined_df.iterrows():
         
 #print(merged_df.to_string())
 # Convert the list of JSON records to a JSON string
+
 filtered_self_joined_df.to_csv('C:\\Users\\sarth\\file1.csv')
-# Convert the date column to datetime format
-filtered_self_joined_df['expiryDate'] = pd.to_datetime(merged_df['expiryDate'])
-
-# Format the date column as "11 Aug 23"
-filtered_self_joined_df['expiryDate'] = filtered_self_joined_df['expiryDate'].dt.strftime('%d %b %y')
-
 filtered_self_joined_df['Profit%'] = (filtered_self_joined_df['Profit'] / filtered_self_joined_df['Margin']) * 100 * (365 / filtered_self_joined_df['Days_Till_Expiry'])
 
 #merged_df['Profit%'] = (float(merged_df['Profit'])/float(merged_df['Margin'])) * 100 * (365/float(merged_df['Days_Till_Expiry'])) 
 
-filtered_self_joined_df = filtered_self_joined_df.sort_values('Profit%', ascending=[False])
 
+
+
+filtered_self_joined_df = filtered_self_joined_df.sort_values('Profit%', ascending=[False])
 filtered_self_joined_df = filtered_self_joined_df.drop(columns=['scripDate' , 'Date_Difference'])
 filtered_self_joined_df = filtered_self_joined_df[filtered_self_joined_df['Profit%'] >= 10]
 
@@ -405,9 +450,3 @@ server.sendmail(email, send_to_email, text)
 server.quit()
 
     
-
-
-
-
-
-
